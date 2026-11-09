@@ -181,7 +181,107 @@ async def admin(message: Message):
         await message.answer(
             "❌ Ошибка при обращении к базе данных."
         )
+# УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ
 
+@dp.message(Command("user"))
+async def admin_user(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ Доступ запрещён.")
+        return
+
+    parts = (message.text or "").split()
+
+    if len(parts) != 2 or not parts[1].isdigit():
+        await message.answer("Использование: /user TELEGRAM_ID")
+        return
+
+    user_id = int(parts[1])
+    user = get_user(user_id)
+
+    if not user:
+        await message.answer("❌ Пользователь не найден.")
+        return
+
+    traffic = user[4] / (1024 ** 3)
+
+    await message.answer(
+        "👤 VOLT USER\n\n"
+        f"ID: {user[0]}\n"
+        f"Имя: {user[2] or 'Не указано'}\n"
+        f"Username: @{user[1] or 'нет'}\n"
+        f"Тариф: {user[3]}\n"
+        f"Трафик: {traffic:.2f} ГБ\n"
+        f"Регистрация: {user[5] or 'Неизвестно'}"
+    )
+
+
+@dp.message(Command("setpremium"))
+async def set_premium(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ Доступ запрещён.")
+        return
+
+    parts = (message.text or "").split()
+
+    if len(parts) != 2 or not parts[1].isdigit():
+        await message.answer("Использование: /setpremium TELEGRAM_ID")
+        return
+
+    user_id = int(parts[1])
+
+    with get_db() as db:
+        cursor = db.execute(
+            """
+            UPDATE users
+            SET tariff = 'PREMIUM',
+                subscription_until = NULL
+            WHERE telegram_id = ?
+            """,
+            (user_id,)
+        )
+
+    if cursor.rowcount == 0:
+        await message.answer("❌ Пользователь не найден.")
+        return
+
+    await message.answer(
+        f"👑 Пользователь {user_id} переведён на PREMIUM.\n"
+        "Срок подписки пока не установлен."
+    )
+
+
+@dp.message(Command("setfree"))
+async def set_free(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ Доступ запрещён.")
+        return
+
+    parts = (message.text or "").split()
+
+    if len(parts) != 2 or not parts[1].isdigit():
+        await message.answer("Использование: /setfree TELEGRAM_ID")
+        return
+
+    user_id = int(parts[1])
+
+    with get_db() as db:
+        cursor = db.execute(
+            """
+            UPDATE users
+            SET tariff = 'FREE',
+                subscription_until = NULL
+            WHERE telegram_id = ?
+            """,
+            (user_id,)
+        )
+
+    if cursor.rowcount == 0:
+        await message.answer("❌ Пользователь не найден.")
+        return
+
+    await message.answer(
+        f"⚡ Пользователь {user_id} переведён на FREE."
+    )
 
 # ПОДПИСКА
 @dp.message(Command("subscription"))
