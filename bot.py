@@ -1,7 +1,7 @@
 import asyncio
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
@@ -282,7 +282,73 @@ async def set_free(message: Message):
     await message.answer(
         f"⚡ Пользователь {user_id} переведён на FREE."
     )
+# ВЫДАЧА PREMIUM НА ОПРЕДЕЛЁННЫЙ СРОК
 
+@dp.message(Command("grantpremium"))
+async def grant_premium(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ Доступ запрещён.")
+        return
+
+    parts = (message.text or "").split()
+
+    if len(parts) != 3 or not parts[1].isdigit() or not parts[2].isdigit():
+        await message.answer(
+            "Использование:\n"
+            "/grantpremium TELEGRAM_ID ДНИ\n\n"
+            "Пример:\n"
+            "/grantpremium 8843062369 30"
+        )
+        return
+
+    user_id = int(parts[1])
+    days = int(parts[2])
+
+    if days < 1 or days > 365:
+        await message.answer("❌ Срок должен быть от 1 до 365 дней.")
+        return
+
+    user = get_user(user_id)
+
+    if not user:
+        await message.answer("❌ Пользователь не найден.")
+        return
+
+    now = datetime.now(timezone.utc)
+    current_until = user[6]
+
+    if user[3] == "PREMIUM" and current_until:
+        try:
+            old_until = datetime.fromisoformat(current_until)
+
+            if old_until.tzinfo is None:
+                old_until = old_until.replace(tzinfo=timezone.utc)
+
+            if old_until > now:
+                now = old_until
+        except ValueError:
+            pass
+
+    expires = now + timedelta(days=days)
+    expires_text = expires.isoformat(timespec="seconds")
+
+    with get_db() as db:
+        db.execute(
+            """
+            UPDATE users
+            SET tariff = 'PREMIUM',
+                subscription_until = ?
+            WHERE telegram_id = ?
+            """,
+            (expires_text, user_id)
+        )
+
+    await message.answer(
+        "👑 PREMIUM АКТИВИРОВАН\n\n"
+        f"Пользователь: {user_id}\n"
+        f"Добавлено дней: {days}\n"
+        f"Действует до: {expires.strftime('%d.%m.%Y %H:%M UTC')}"
+    )
 # ПОДПИСКА
 @dp.message(Command("subscription"))
 async def subscription(message: Message):
