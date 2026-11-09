@@ -1,5 +1,7 @@
 import asyncio
 import os
+import sqlite3
+from datetime import datetime, timezone
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
@@ -10,8 +12,67 @@ TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("Не задан BOT_TOKEN")
 
+# База данных в постоянном хранилище Amvera
+DB_PATH = "/data/volt.db"
+
+os.makedirs("/data", exist_ok=True)
+
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
+
+
+def get_db():
+    return sqlite3.connect(DB_PATH)
+
+
+def init_db():
+    with get_db() as db:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                telegram_id INTEGER PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                tariff TEXT DEFAULT 'FREE',
+                traffic_used_bytes INTEGER DEFAULT 0,
+                registered_at TEXT,
+                subscription_until TEXT
+            )
+        """)
+
+
+def register_user(user):
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    with get_db() as db:
+        db.execute("""
+            INSERT INTO users (
+                telegram_id,
+                username,
+                first_name,
+                tariff,
+                traffic_used_bytes,
+                registered_at
+            )
+            VALUES (?, ?, ?, 'FREE', 0, ?)
+
+            ON CONFLICT(telegram_id) DO UPDATE SET
+                username = excluded.username,
+                first_name = excluded.first_name
+        """, (
+            user.id,
+            user.username,
+            user.first_name,
+            now
+        ))
+
+
+def get_user(user_id):
+    with get_db() as db:
+        return db.execute(
+            "SELECT * FROM users WHERE telegram_id = ?",
+            (user_id,)
+        ).fetchone()
+
 
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
@@ -25,10 +86,13 @@ main_menu = ReplyKeyboardMarkup(
 
 @dp.message(CommandStart())
 async def start(message: Message):
+    register_user(message.from_user)
+
     await message.answer(
-        "⚡ Добро пожаловать в VOLT VPN!\n\n"
-        "Твой персональный кабинет управления подключением.\n\n"
-        "Выбери нужный раздел:",
+        "⚡ VOLT VPN\n\n"
+        "Твоя скорость. Твоя приватность. Твой контроль.\n\n"
+        "Добро пожаловать в VOLT.\n"
+        "Выбери свой режим:",
         reply_markup=main_menu
     )
 
@@ -39,7 +103,7 @@ async def free(message: Message):
         "⚡ VOLT FREE\n\n"
         "Трафик: 3 ГБ в месяц\n"
         "Скорость: ограниченная\n\n"
-        "Скоро здесь появится подключение."
+        "Подключение появится здесь."
     )
 
 
@@ -50,18 +114,29 @@ async def premium(message: Message):
         "Цена: 219 ₽ / месяц\n"
         "Высокая скорость\n"
         "Расширенные возможности\n\n"
-        "Подключение оплаты добавим позже."
+        "Оплата появится здесь."
     )
 
 
 @dp.message(Command("profile"))
 @dp.message(F.text == "👤 Мой профиль")
 async def profile(message: Message):
-    await message.answer(
-        f"👤 Твой профиль\n\n"
-        f"Telegram ID: {message.from_user.id}\n"
-        f"Тариф: FREE"
-    )
+    register_user(message.from_user)
+    user = get_user(message.from_user.id)
+
+    if user:
+        telegram_id = user[0]
+        tariff = user[3]
+        traffic = user[4] / (1024 ** 3)
+        registered = user[5][:10] if user[5] else "Неизвестно"
+
+        await message.answer(
+            "👤 VOLT IDENTITY\n\n"
+            f"ID: {telegram_id}\n"
+            f"Тариф: {tariff}\n"
+            f"Использовано трафика: {traffic:.2f} ГБ\n"
+            f"Дата регистрации: {registered}"
+        )
 
 
 @dp.message(Command("subscription"))
@@ -73,7 +148,8 @@ async def subscription(message: Message):
 @dp.message(F.text == "🔌 Подключение")
 async def connect(message: Message):
     await message.answer(
-        "🔌 Настройка VPN-подключения появится здесь."
+        "🔌 VOLT CONNECTION\n\n"
+        "Настройка VPN-подключения появится здесь."
     )
 
 
@@ -81,11 +157,13 @@ async def connect(message: Message):
 @dp.message(F.text == "🆘 Поддержка")
 async def support(message: Message):
     await message.answer(
-        "🆘 По вопросам работы VOLT VPN напиши в поддержку."
+        "🆘 VOLT SUPPORT\n\n"
+        "Раздел технической поддержки скоро появится."
     )
 
 
 async def main():
+    init_db()
     await dp.start_polling(bot)
 
 
