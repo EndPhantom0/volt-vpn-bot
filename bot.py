@@ -431,6 +431,9 @@ async def support(message: Message):
 # ЗАПУСК
 async def main():
     init_db()
+
+    asyncio.create_task(subscription_expiry_checker())
+
     await dp.start_polling(bot)
 
 
