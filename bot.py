@@ -349,6 +349,59 @@ async def grant_premium(message: Message):
         f"Добавлено дней: {days}\n"
         f"Действует до: {expires.strftime('%d.%m.%Y %H:%M UTC')}"
     )
+# АВТОМАТИЧЕСКОЕ ИСТЕЧЕНИЕ PREMIUM
+
+async def subscription_expiry_checker():
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+
+            with get_db() as db:
+                users = db.execute(
+                    """
+                    SELECT telegram_id, subscription_until
+                    FROM users
+                    WHERE tariff = 'PREMIUM'
+                    AND subscription_until IS NOT NULL
+                    """
+                ).fetchall()
+
+            for user_id, subscription_until in users:
+                try:
+                    expires = datetime.fromisoformat(subscription_until)
+
+                    if expires.tzinfo is None:
+                        expires = expires.replace(tzinfo=timezone.utc)
+
+                    if expires <= now:
+                        with get_db() as db:
+                            db.execute(
+                                """
+                                UPDATE users
+                                SET tariff = 'FREE',
+                                    subscription_until = NULL
+                                WHERE telegram_id = ?
+                                AND tariff = 'PREMIUM'
+                                AND subscription_until = ?
+                                """,
+                                (user_id, subscription_until)
+                            )
+
+                        await bot.send_message(
+                            user_id,
+                            "⌛ Срок твоей PREMIUM-подписки VOLT VPN закончился.\n\n"
+                            "Тариф изменён на FREE.\n"
+                            "Чтобы вернуть PREMIUM, продли подписку."
+                        )
+
+                except Exception as error:
+                    print(f"Ошибка обработки подписки {user_id}: {error}")
+
+        except Exception as error:
+            print(f"Ошибка проверки подписок: {error}")
+
+        await asyncio.sleep(60)
+
 # ПОДПИСКА
 @dp.message(Command("subscription"))
 async def subscription(message: Message):
